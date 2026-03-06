@@ -1,0 +1,9 @@
+requests
+beautifulsoup4
+python-dotenv
+pydantic
+scikit-learn
+joblib
+fastapi
+uvicorn[standard]
+openai
