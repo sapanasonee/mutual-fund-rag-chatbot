@@ -71,17 +71,22 @@ def _holdings_block(scheme_record: dict, max_holdings: int = 15) -> Optional[str
     if not holdings:
         return None
 
+    valid = [
+        h for h in holdings[:max_holdings]
+        if (h.get("holding_name") and h.get("weight_percentage") is not None
+            and 0 <= float(h.get("weight_percentage", 0)) <= 100)
+    ]
+    if not valid:
+        return None
+
     lines = ["Top portfolio holdings:"]
-    for h in holdings[:max_holdings]:
+    for h in valid:
         name = h.get("holding_name") or "Unknown"
-        sector = h.get("sector")
         weight = h.get("weight_percentage")
-        parts = [name]
-        if sector:
-            parts.append(f"sector {sector}")
         if weight is not None:
-            parts.append(f"weight {weight}%")
-        lines.append(" - " + ", ".join(parts))
+            lines.append(f" - {name} ({weight}%)")
+        else:
+            lines.append(f" - {name}")
 
     return "\n".join(lines)
 

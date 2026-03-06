@@ -1,5 +1,6 @@
 """
-Load Phase 2 embedding index and perform retrieval.
+Load Phase 2 semantic embedding index and perform retrieval.
+User question -> Embedding model -> Vector similarity search -> Top relevant chunks.
 Self-contained to avoid importing from phase-2-rag-preparation (hyphen in package name).
 """
 from __future__ import annotations
@@ -7,9 +8,9 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import List, Optional
 
-import joblib
+import numpy as np
 
 
 @dataclass
@@ -31,29 +32,50 @@ def _load_corpus(corpus_path: Path) -> List[dict]:
     return chunks
 
 
-class VectorStore:
-    """In-memory vector store for TF-IDF retrieval with optional scheme_id filter."""
+def _cosine_similarity_batch(query_vec: np.ndarray, embeddings: np.ndarray) -> np.ndarray:
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    norms[norms == 0] = 1
+    embeddings_norm = embeddings / norms
+    q_norm = np.linalg.norm(query_vec)
+    if q_norm == 0:
+        return np.zeros(len(embeddings))
+    return (embeddings_norm @ query_vec) / q_norm
 
-    def __init__(self, corpus: List[dict], embeddings: Any, vectorizer: Any):
+
+class VectorStore:
+    """In-memory vector store for semantic retrieval with optional scheme_id filter."""
+
+    def __init__(self, corpus: List[dict], embeddings: np.ndarray, model: object):
         self._corpus = corpus
-        self._embeddings = embeddings
-        self._vectorizer = vectorizer
+        self._embeddings = np.asarray(embeddings, dtype=np.float32)
+        self._model = model
 
     @classmethod
     def load(cls, phase2_dir: Path) -> "VectorStore":
+        from sentence_transformers import SentenceTransformer
+
         phase2_dir = Path(phase2_dir)
         corpus_path = phase2_dir / "corpus.jsonl"
-        emb_path = phase2_dir / "tfidf_embeddings.joblib"
-        vec_path = phase2_dir / "tfidf_vectorizer.joblib"
-        if not corpus_path.exists() or not emb_path.exists() or not vec_path.exists():
+        emb_path = phase2_dir / "semantic_embeddings.npy"
+        meta_path = phase2_dir / "embedding_index_meta.json"
+
+        if not corpus_path.exists() or not emb_path.exists():
             raise FileNotFoundError(
-                f"Phase 2 index not found. Run Phase 2 first. "
-                f"Expected: {corpus_path}, {emb_path}, {vec_path}"
+                f"Phase 2 semantic index not found. Run Phase 2 first. "
+                f"Expected: {corpus_path}, {emb_path}"
             )
+
         corpus = _load_corpus(corpus_path)
-        embeddings = joblib.load(emb_path)
-        vectorizer = joblib.load(vec_path)
-        return cls(corpus=corpus, embeddings=embeddings, vectorizer=vectorizer)
+        embeddings = np.load(emb_path)
+
+        model_name = "all-MiniLM-L6-v2"
+        if meta_path.exists():
+            with meta_path.open("r", encoding="utf-8") as f:
+                meta = json.load(f)
+                model_name = meta.get("model", model_name)
+
+        model = SentenceTransformer(model_name)
+        return cls(corpus=corpus, embeddings=embeddings, model=model)
 
     def search(
         self,
@@ -61,12 +83,10 @@ class VectorStore:
         scheme_id_filter: Optional[str] = None,
         top_k: int = 5,
     ) -> List[RetrievedChunk]:
-        from sklearn.metrics.pairwise import cosine_similarity
+        q_vec = self._model.encode([query], convert_to_numpy=True)[0].astype(np.float32)
+        scores = _cosine_similarity_batch(q_vec, self._embeddings)
+        indices = np.argsort(scores)[::-1]
 
-        q_vec = self._vectorizer.transform([query])
-        scores = cosine_similarity(q_vec, self._embeddings, dense_output=True)[0]
-
-        indices = scores.argsort()[::-1]
         def to_chunk(i: int) -> RetrievedChunk:
             meta = self._corpus[i].get("metadata", {})
             return RetrievedChunk(
@@ -87,7 +107,6 @@ class VectorStore:
                 results.append(to_chunk(i))
             return results
 
-        # Prefer scheme-specific chunks first when a scheme is referenced.
         scheme_hits: List[int] = []
         global_hits: List[int] = []
         for i in indices:

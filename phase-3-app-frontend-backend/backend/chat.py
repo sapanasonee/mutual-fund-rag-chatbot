@@ -106,32 +106,41 @@ def _extractive_fallback_answer(query: str, context: str) -> str:
 
     lines: List[str] = []
  
-    # How-to: capital gains statement / statements download
-    if ("capital gain" in q or "capital gains" in q) and "statement" in q:
+    # How-to: capital gains statement / statements download - step-style format
+    if ("capital gain" in q or "capital gains" in q or "statement" in q) and (
+        "download" in q or "how" in q or "get" in q
+    ):
         url = find_first_url()
-
-        lines.append("How to download a Capital Gains Statement (from the retrieved reference):")
-
+        lines.append("**How to download a Capital Gains Statement**")
+        lines.append("")
+        lines.append("1. Go to your AMC's 'Request Statement' or 'Account Statement' page.")
         if url:
-            lines.append(f"1) Go to the HDFC AMC 'Request Statement' page: {url}")
-        else:
-            lines.append("1) Go to the HDFC AMC 'Request Statement' page.")
-
-        lines.append("2) Choose 'Capital Gains Statement'.")
-        lines.append("3) Enter your folio number (and required details).")
-        lines.append("4) Submit to receive the statement.")
-
-        source_url = find_first_url()
-
-        if source_url:
-            lines.append(f"\nSource: {source_url}")
-        else:
-            lines.append("\nSource: Official AMC / SEBI / AMFI pages")
-
-        lines.append("Last updated from sources.")
+            lines.append(f"   URL: {url}")
+        lines.append("2. Select 'Capital Gains Statement' from the options.")
+        lines.append("3. Enter your folio number and other required details.")
+        lines.append("4. Submit the request to receive the statement via email or download.")
+        lines.append("")
+        if url:
+            lines.append(f"Source: {url}")
+        lines.append("")
         lines.append("This is for informational purposes only. Please consult a qualified advisor.")
-
         return "\n".join(lines)
+    # Holdings: format as "The top 3 holdings of the fund are X(8.9%), Y(7.82%), Z(7.59%)"
+    if "holding" in q or "portfolio" in q:
+        holdings_matches = re.findall(
+            r"[-–]\s*([^(\n]+?)\s*\((\d+(?:\.\d+)?)\s*%\)",
+            context,
+            flags=re.IGNORECASE,
+        )
+        if holdings_matches:
+            top_n = min(5, len(holdings_matches))
+            parts = [f"{n.strip()}({p}%)" for n, p in holdings_matches[:top_n]]
+            lines.append(f"The top {top_n} holdings of the fund are {', '.join(parts)}.")
+            if find_first_url():
+                lines.append(f"\nSource: {find_first_url()}")
+            lines.append("\nThis is for informational purposes only. Please consult a qualified advisor.")
+            return "\n".join(lines)
+
     if scheme:
         lines.append(f"{scheme}")
 
@@ -191,7 +200,11 @@ Rules:
 - If the context does not contain relevant information, say "I don't have that information in my knowledge base."
 - Do not give investment advice or recommend funds.
 - Include a brief disclaimer: "This is for informational purposes only. Please consult a qualified advisor."
-- For personal information (PAN, Aadhaar, bank details, etc.), you will not receive such queries as they are out of scope."""
+
+Formatting:
+- For "top holdings" or "portfolio holdings" questions: Answer in one concise sentence, e.g. "The top 3 holdings of the fund are ICICI Bank Ltd(8.9%), HDFC Bank Ltd(7.82%), Axis Bank Ltd(7.59%)."
+- For "how to download capital gains statement" or similar how-to questions: Use a clean step-style format with numbered steps (1. 2. 3. ...), no extra preamble.
+- Keep answers concise and scannable."""
 
     user_msg = f"""Context from knowledge base:
 

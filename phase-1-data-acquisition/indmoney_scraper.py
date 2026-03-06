@@ -390,26 +390,79 @@ def _parse_holdings(soup: BeautifulSoup) -> List[Holding]:
     holdings: List[Holding] = []
     tables = soup.find_all("table")
     for table in tables:
-        headers = [th.get_text(strip=True).lower() for th in table.find_all("th")]
+        header_els = table.find_all("th")
+        headers = [th.get_text(strip=True).lower() for th in header_els]
         if not headers:
             continue
-        if any("holding" in h or "company" in h or "stock" in h for h in headers):
-            for row in table.find_all("tr"):
-                cells = [td.get_text(strip=True) for td in row.find_all("td")]
-                if not cells:
-                    continue
-                name = cells[0]
-                sector = None
-                weight = None
-                for h, c in zip(headers, cells):
-                    if "sector" in h:
-                        sector = c
-                    if "%" in c or "weight" in h:
-                        try:
-                            cleaned = c.replace("%", "").strip()
-                            weight = float(cleaned)
-                        except ValueError:
-                            continue
+        if not any(
+            "holding" in h or "company" in h or "stock" in h or "weight" in h
+            for h in headers
+        ):
+            continue
+
+        weight_col = None
+        name_col = None
+        sector_col = None
+        for i, h in enumerate(headers):
+            if "weight" in h or (i < len(headers) and "%" in h):
+                weight_col = i
+            if "holding" in h or "company" in h or "stock" in h or "name" in h:
+                name_col = i
+            if "sector" in h:
+                sector_col = i
+
+        for row in table.find_all("tr"):
+            tds = row.find_all("td")
+            if not tds:
+                continue
+            cells = []
+            for td in tds:
+                link = td.find("a")
+                text = (link.get_text(strip=True) if link else td.get_text(strip=True)) or ""
+                cells.append(text)
+
+            if len(cells) < 2:
+                continue
+
+            weight = None
+            if weight_col is not None and weight_col < len(cells):
+                raw = cells[weight_col].replace("%", "").strip()
+                try:
+                    w = float(raw)
+                    if 0 <= w <= 100:
+                        weight = w
+                except ValueError:
+                    pass
+
+            if weight is None:
+                for i, c in enumerate(cells):
+                    raw = c.replace("%", "").strip()
+                    try:
+                        w = float(raw)
+                        if 0 <= w <= 100:
+                            weight = w
+                            if weight_col is None:
+                                weight_col = i
+                            break
+                    except ValueError:
+                        continue
+
+            name = None
+            if name_col is not None and name_col < len(cells):
+                cand = cells[name_col]
+                if cand and not re.match(r"^[\d.%\s-]+$", cand):
+                    name = cand
+            if not name:
+                for i, c in enumerate(cells):
+                    if c and not re.match(r"^[\d.%\s-]+$", c) and len(c) > 3:
+                        name = c
+                        break
+
+            sector = None
+            if sector_col is not None and sector_col < len(cells):
+                sector = cells[sector_col] or None
+
+            if name and weight is not None:
                 holdings.append(
                     Holding(
                         holding_name=name,
@@ -418,6 +471,25 @@ def _parse_holdings(soup: BeautifulSoup) -> List[Holding]:
                         weight_percentage=weight,
                     )
                 )
+
+    if holdings:
+        return holdings
+
+    page_text = soup.get_text(separator="\n", strip=True)
+    for m in re.finditer(
+        r"([A-Za-z][A-Za-z0-9\s&.,-]*(?:Ltd|Limited|Co|Corp)?)\s*\((\d+(?:\.\d+)?)\s*%\)",
+        page_text,
+    ):
+        name, pct = m.group(1).strip(), float(m.group(2))
+        if 0 < pct <= 100 and len(name) > 4:
+            holdings.append(
+                Holding(
+                    holding_name=name,
+                    sector=None,
+                    asset_class=None,
+                    weight_percentage=pct,
+                )
+            )
     return holdings
 
 

@@ -1,5 +1,6 @@
 {
   "n_chunks": 23,
-  "vector_dim": 2414,
-  "corpus_path": "D:\\API Build hours\\RAG Chatbot for Mutual Fund\\data\\phase2\\corpus.jsonl"
+  "vector_dim": 384,
+  "corpus_path": "D:\\API Build hours\\RAG Chatbot for Mutual Fund\\data\\phase2\\corpus.jsonl",
+  "model": "all-MiniLM-L6-v2"
 }

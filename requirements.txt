@@ -2,8 +2,10 @@ requests
 beautifulsoup4
 python-dotenv
 pydantic
+playwright
 scikit-learn
 joblib
+sentence-transformers
 fastapi
 uvicorn[standard]
 openai
