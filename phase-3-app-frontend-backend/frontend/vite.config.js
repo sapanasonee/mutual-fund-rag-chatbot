@@ -6,10 +6,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/chat': 'http://localhost:8000',
-      '/funds': 'http://localhost:8000',
-      '/search-funds': 'http://localhost:8000',
-      '/health': 'http://localhost:8000',
+      '/chat': process.env.BACKEND_URL,
+      '/funds': process.env.BACKEND_URL,
+      '/search-funds': process.env.BACKEND_URL,
+      '/health': process.env.BACKEND_URL,
     },
   },
 })
