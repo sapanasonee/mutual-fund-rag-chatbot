@@ -38,7 +38,7 @@ function App() {
         ...prev,
         {
           role: 'assistant',
-          content: `Error: ${err.message}. Make sure the backend is running on port 8000.`,
+          content: `Error: ${err.message}. Make sure the backend is running on ${process.env.BACKEND_URL}.`,
         },
       ])
     } finally {
